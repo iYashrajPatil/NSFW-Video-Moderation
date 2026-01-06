@@ -1,0 +1,25 @@
+# Python System files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment (if you made one)
+venv/
+env/
+
+# IDE settings
+.vscode/
+.idea/
+
+# The heavy AI models (Too big for GitHub)
+# (The code will re-download them automatically on a new machine)
+*.bin
+*.pth
+*.safetensors
+*.onnx
+
+# Temporary video files
+temp_*
+*.mp4
+*.avi
+*.mov

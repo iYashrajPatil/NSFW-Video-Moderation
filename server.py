@@ -1,15 +1,20 @@
 from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import RedirectResponse # <--- NEW IMPORT
 import shutil
 import os
-# CHANGE 1: Import the correct class name
 from moderator import FastVideoModerator
 
 app = FastAPI()
 
-# CHANGE 2: Initialize the correct class
-# Load model once at startup
+# Initialize the correct class
 print("[INFO] Initializing server...")
 moderator = FastVideoModerator(frame_interval=1.5, confidence_threshold=0.75)
+
+# --- NEW: Redirect Homepage to Docs ---
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/docs")
+# --------------------------------------
 
 @app.post("/check_video")
 async def check_video(file: UploadFile = File(...)):
@@ -30,5 +35,5 @@ async def check_video(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    print("[INFO] Starting server on port 8000...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("[INFO] Starting server on port 7860...")
+    uvicorn.run(app, host="0.0.0.0", port=7860)

@@ -7,6 +7,7 @@ sdk: docker
 pinned: false
 app_port: 7860
 ---
+
 # 🛡️ AI-Powered NSFW Video Moderation API
 
 <div align="center">
@@ -56,11 +57,11 @@ git clone [https://github.com/iYashrajPatil/NSFW-Video-Moderation.git](https://g
 cd NSFW-Video-Moderation
 ```
 ### 2. Install Dependencies
-```bash
+```Bash
 pip install -r requirements.txt
 ```
 ### 3. Run the Server
-```bash
+```Bash
 python server.py
 ```
 ##### Note: The first launch will automatically download the AI model (~300MB). Please allow it a moment to complete.
@@ -73,21 +74,24 @@ This project is optimized for the Hugging Face Free Tier using the Docker SDK.
 
 ### Option A: Push via Git (Recommended)
 If you have already created a Space with the Docker SDK:
-```bash
+
+``` Bash
+
 # Add your Space as a remote
-git remote add space [https://huggingface.co/spaces/YOUR_USERNAME/SPACE_NAME](https://huggingface.co/spaces/YOUR_USERNAME/SPACE_NAME)
+git remote add space [https://huggingface.co/spaces/Yashrajp12/NSFW-Video-Moderator](https://huggingface.co/spaces/Yashrajp12/NSFW-Video-Moderator)
 
 # Push your code
 git push space main
 ```
 ### Option B: Manual Setup
-Create a new Space on Hugging Face.
+1. Create a new Space on Hugging Face.
 
-Select Docker as the SDK.
+2. Select Docker as the SDK.
 
-Go to Settings > Git Repository and link this GitHub repo.
+3. Go to Settings > Git Repository and link this GitHub repo.
 
 ## 🔌 API Reference
+
 POST /check_video
 Upload a video file to receive a moderation verdict.
 
@@ -95,6 +99,10 @@ Request: multipart/form-data
 
 - file: (Video File) .mp4, .avi, .mov
 ```bash
+Response (JSON):
+
+JSON
+
 {
   "verdict": "UNSAFE",
   "processed_frames": 12,
@@ -109,14 +117,17 @@ Request: multipart/form-data
   ]
 }
 ```
-## 📂 Project Structure
+```bash
+📂 Project Structure
+Plaintext
+
 NSFW-Video-Moderation/
 ├── server.py           # 🚀 Entry point for the FastAPI server
 ├── moderator.py        # 🧠 Core logic (ViT Model + OpenCV sampling)
 ├── requirements.txt    # 📦 Python dependencies
 ├── Dockerfile          # 🐳 Configuration for cloud deployment
 └── README.md           # 📄 Documentation
-
+```
 ## 🤝 Contributing
 Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are greatly appreciated.
 

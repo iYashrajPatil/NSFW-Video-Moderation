@@ -1,116 +1,89 @@
 import cv2
 import torch
 from PIL import Image
-from transformers import AutoModelForImageClassification, ViTImageProcessor
-import time
+from transformers import AutoModelForImageClassification, ViTImageProcessor, pipeline
 
-class FastVideoModerator:
-    def __init__(self, frame_interval=2.0, confidence_threshold=0.8):
-        print("[INFO] Loading FalconAI NSFW Classifier (ViT)...")
-        # Load model explicitly on CPU (or GPU if available)
+class UnifiedModerator:
+    def __init__(self):
+        print("[INFO] Initializing Unified Models...")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # 1. VISUAL MODEL (For Images & Video)
         model_name = "Falconsai/nsfw_image_detection"
+        self.img_processor = ViTImageProcessor.from_pretrained(model_name)
+        self.img_model = AutoModelForImageClassification.from_pretrained(model_name).to(self.device)
+        self.img_model.eval()
         
-        self.processor = ViTImageProcessor.from_pretrained(model_name)
-        self.model = AutoModelForImageClassification.from_pretrained(model_name).to(self.device)
-        self.model.eval() # Set to evaluation mode for speed
-
-        self.frame_interval = frame_interval # Process 1 frame every X seconds
-        self.threshold = confidence_threshold
-        print(f"[INFO] Model Loaded on {self.device.upper()}. Ready.")
-
-    def predict_frame(self, frame):
-        """
-        Resize and predict a single frame. 
-        Returns (is_nsfw, score, label)
-        """
-        # 1. Resize small (224x224) - CRITICAL for speed
-        # We use PIL because HuggingFace processors expect PIL images
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(frame_rgb)
+        # 2. TEXT MODEL (For Comments/Bio)
+        # We load this on CPU (-1) to save GPU memory for video if needed, or change to 0 for GPU
+        print("[INFO] Loading Text Toxicity Model...")
+        self.text_pipe = pipeline("text-classification", model="unitary/toxic-bert", top_k=None, device=-1)
         
-        # 2. Process
-        inputs = self.processor(images=pil_image, return_tensors="pt").to(self.device)
+        print(f"[INFO] All Models Loaded on {self.device.upper()}. Ready.")
+
+    def moderate_image(self, pil_image):
+        """Helper function to check a single image"""
+        inputs = self.img_processor(images=pil_image, return_tensors="pt").to(self.device)
         
         with torch.no_grad():
-            outputs = self.model(**inputs)
+            outputs = self.img_model(**inputs)
             probs = outputs.logits.softmax(dim=1)
         
-        # 3. Get results
-        # The model classes are usually: {0: 'normal', 1: 'nsfw'}
-        score_nsfw = probs[0][1].item() # Probability of being NSFW
-        score_normal = probs[0][0].item()
+        # Label 1 is usually NSFW for this model
+        nsfw_score = probs[0][1].item()
         
-        if score_nsfw > self.threshold:
-            return True, score_nsfw, "NSFW"
-        else:
-            return False, score_nsfw, "Normal"
+        if nsfw_score > 0.8:
+            return {"verdict": "UNSAFE", "score": round(nsfw_score, 3), "type": "NSFW_VISUAL"}
+        return {"verdict": "SAFE", "score": round(nsfw_score, 3), "type": "CLEAN"}
 
-    def process_video(self, video_path):
+    def moderate_text(self, text):
+        """Checks text for hate speech, insults, or threats"""
+        results = self.text_pipe(text)[0]
+        
+        # Check if any toxic label is high
+        for label in results:
+            if label['score'] > 0.7: 
+                return {
+                    "verdict": "UNSAFE", 
+                    "score": round(label['score'], 3), 
+                    "type": f"TEXT_{label['label'].upper()}"
+                }
+        
+        return {"verdict": "SAFE", "score": 0.0, "type": "CLEAN"}
+
+    def moderate_video(self, video_path, interval=1.5):
         cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            return {"error": "Could not open video"}
-
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps == 0: fps = 30
-        
-        # Skip logic: process 1 frame every X seconds
-        step = int(fps * self.frame_interval)
+        step = int(fps * interval)
         if step < 1: step = 1
 
-        print(f"[START] Processing {video_path}...")
-        start_time = time.time()
+        unsafe_frames = []
+        frame_idx = 0
         
-        nsfw_frames = []
-        checked_frames = 0
-        current_idx = 0
-
         while True:
-            # Efficient skipping: grab() is faster than read() for skipping
-            if current_idx % step != 0:
-                ret = cap.grab()
-                if not ret: break
-                current_idx += 1
+            if frame_idx % step != 0:
+                if not cap.grab(): break
+                frame_idx += 1
                 continue
 
-            # Fully decode only the frames we need
             ret, frame = cap.read()
             if not ret: break
 
-            checked_frames += 1
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(rgb_frame)
             
-            # Predict
-            is_nsfw, score, label = self.predict_frame(frame)
+            result = self.moderate_image(pil_img)
             
-            if is_nsfw:
-                timestamp = current_idx / fps
-                print(f"  [!] NSFW detected at {timestamp:.1f}s (Score: {score:.2f})")
-                nsfw_frames.append({
-                    "timestamp": round(timestamp, 2),
-                    "score": round(score, 3),
-                    "label": label
-                })
-                
-                # EARLY EXIT: If we find distinct NSFW content effectively, 
-                # we can stop to save time. 
-                # (Optional: Remove this 'if' to scan full video)
-                if len(nsfw_frames) >= 3: 
-                    print("[STOP] Multiple NSFW frames found. Early exit.")
-                    break
-
-            current_idx += 1
-
+            if result["verdict"] == "UNSAFE":
+                timestamp = frame_idx / fps
+                unsafe_frames.append({"time": round(timestamp, 2), "score": result["score"]})
+                if len(unsafe_frames) >= 3: break
+            
+            frame_idx += 1
+            
         cap.release()
-        total_time = time.time() - start_time
         
-        # Final Verdict
-        is_unsafe = len(nsfw_frames) > 0
-        verdict = "UNSAFE" if is_unsafe else "SAFE"
-        
-        return {
-            "verdict": verdict,
-            "processed_frames": checked_frames,
-            "nsfw_frame_count": len(nsfw_frames),
-            "process_time_seconds": round(total_time, 2),
-            "flagged_segments": nsfw_frames
-        }
+        if unsafe_frames:
+            return {"verdict": "UNSAFE", "flagged_segments": unsafe_frames}
+        return {"verdict": "SAFE", "flagged_segments": []}

@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-multipart
+opencv-python-headless
+transformers
+torch
+pillow
+nudenet
+numpy
+tf-keras
